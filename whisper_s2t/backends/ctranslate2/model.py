@@ -215,7 +215,7 @@ class WhisperModelCT2(WhisperModel):
 
         return word_timings
     
-    def generate_segment_batched(self, features, prompts, seq_lens, seg_metadata):
+    def generate_segment_batched(self, features, prompts, seq_lens, seg_metadata, align_features=None, align_seq_lens=None):
         
         if self.device == 'cpu':
             features = np.ascontiguousarray(features.detach().numpy())
@@ -243,7 +243,17 @@ class WhisperModelCT2(WhisperModel):
         if self.asr_options['word_timestamps']:
             text_tokens = [x.sequences_ids[0]+[self.tokenizer.eot] for x in result]
             sot_seqs = [tuple(_[-4:]) for _ in prompts]
-            word_timings = self.align_words(features, texts, text_tokens, sot_seqs, seq_lens, seg_metadata)
+            
+            # Use align_features (80 mel bins) for alignment if provided, otherwise use main features
+            # This is needed for large-v3 which uses 128 mel bins, but aligner expects 80
+            if align_features is not None:
+                if self.device == 'cpu':
+                    align_feats = np.ascontiguousarray(align_features.detach().numpy())
+                else:
+                    align_feats = align_features.contiguous()
+                word_timings = self.align_words(align_feats, texts, text_tokens, sot_seqs, align_seq_lens, seg_metadata)
+            else:
+                word_timings = self.align_words(features, texts, text_tokens, sot_seqs, seq_lens, seg_metadata)
 
             for _response, _word_timings in zip(response, word_timings):
                 _response['word_timestamps'] = _word_timings
